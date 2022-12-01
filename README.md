@@ -16,7 +16,7 @@ In the `Scripts` dropdown for txt2img, select `Promptbook Generation` and then t
 
 The `Example prompt` fields are only used for generating the prompt card's image and aren't otherwise saved. Typically I use `masterpiece, highest quality, highres, 1girl` in the positive prompt so there's at least a clearly defined female subject in the resulting images. `Append example prompts` means to place your snippet prompt before the example prompts.
 
-Note that if you have a negative prompt you normally use for txt2img, it will get added to the snippet unless you remove it. Usually you want to keep the negative prompt blank when generating prompt cards, except for a single card that captures the negative prompt keywords you normally use. You would then add that negative prompt card to all your recipes later on.
+Note that if you have a negative prompt you normally use for txt2img, it will get added to the snippet unless you delete it from the txt2img field first. Usually you want to keep the negative prompt blank when generating prompt cards, except for a single card that captures the negative prompt keywords you normally use. You would then add that negative prompt card to all your recipes later on.
 
 You can also batch generate prompt cards using the `Batch file` field. If it's not blank, the file's contents will override whatever's in the txt2img prompt fields. This field should point to a `.txt` file containing one positive prompt per line, in this case the negative prompt is ignored.
 
