@@ -14,17 +14,17 @@ Note that if you have a negative prompt you normally use, it will get added to t
 
 You can also batch generate prompt cards using the `Batch file` field. It should point to a `.txt` file containing one positive prompt per line, in this case the negative prompt is ignored
 
-Generate a few more cards with some useful keywords. Alternatively you can find the prompt card `.png`s online and put them into your `promptbook/prompts` folder. Here is an example that encodes `masterpiece, best quality, highres` in the positive prompt and some common negative prompt keywords.
+Generate a few more cards with some useful keywords. Alternatively you can find the prompt card `.png`s online and put them into your `promptbook/prompts` folder. Here is an example that encodes `masterpiece, best quality, highres` in the positive prompt and some common negative prompt keywords, you can download and use it yourself:
 
-![]()
+![masterpiece + unwanted + bad anatomy](static/masterpiece + unwanted + bad anatomy.png)
 
-As you can see the card will have a before/after comparison so you can better understand how the keywords within will affect the output. When generating the card you can also set a custom strength for the prompt in case the effect isn't obvious enough
+As you can see the card will have a before/after comparison so you can better understand how the keywords within will affect the output. When generating the card you can also set a custom strength for the prompt in case the effect isn't obvious enough. Optionally you can disable the comparison image, for example if you're generating hundreds of prompts in a batch session with just one seed.
 
 ### Browsing the promptbook
 
 Now with some prompt cards at hand, go to the `Promptbook` tab and browse through the pages. Here you can browse the available prompt cards and combine them into recipes.
 
-Note that if you want edit one of your saved prompts, the way to do this is to send the prompt to `txt2img` using the button and generate another prompt card from it. The reason for this is to ensure the cover image remains accurate after you change the prompt keywords.
+Note that if you want to edit one of your saved prompts, the way to do this is to send the prompt to `txt2img` using the button and generate another prompt card from it. The reason for this is to ensure the cover image remains accurate after you change the prompt keywords.
 
 ### Using recipes
 
@@ -34,4 +34,10 @@ Each individual prompt can have a custom strength set. This uses the same attent
 
 If you're missing a prompt card for the text you want to add, you can use the `(Custom)` prompt type selectable through the dropdown on each row. This lets you enter a custom positive/negative prompt for that row.
 
-Once you're satisfied with the prompt setup, press the `Create Recipe` button. The JSON of the recipe will be output. Copy it and switch to txt2img, then select the `Promptbook Generation > Generate` tab and paste it into the `Request JSON` field there. Afterwards you can adjust your model and parameters like usual and click `Generate`. Each of the positive/negative prompts will be combined together in sequential order with any custom strengths applied.
+Once you're satisfied with the prompt setup, press the `Create Recipe` button. The JSON of the recipe will be output. Copy it and switch to txt2img, then select the `Promptbook Generation > Generate` tab and paste it into the `Request JSON` field there. Afterwards you can adjust your model and parameters like usual and click `Generate`. Each of the positive/negative prompts will be combined together in sequential order with any custom strengths applied. 
+
+The usual txt2img prompt can also be appended or prepended to the result output by the recipe evaluator for quick testing.
+
+### Viewing prompt results
+
+You can view the images resulting from adding a prompt to a recipe via the `generated` tab in the `Promptbook` section. As you combine prompts this can become useful for gathering examples across all prompts, filtered down to a single subject or concept.

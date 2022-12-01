@@ -154,7 +154,6 @@ class Prompt:
 ####################################################################################################
 
 
-MAX_ROWS = 10
 SPECIAL_PROMPTS = ["(None)", "(Custom)"]
 
 
@@ -181,7 +180,7 @@ class UiPromptMerge:
     @staticmethod
     def load_recipe(recipe_json):
         recipe = Recipe.from_json(recipe_json)
-        results = ["(None)", 1.0, "", ""] * MAX_ROWS
+        results = ["(None)", 1.0, "", ""] * opts.promptbook_merge_max_rows
 
         for index, part in enumerate(recipe.parts):
             if part is None:
@@ -208,7 +207,7 @@ class UiPromptMerge:
 
     @staticmethod
     def clear_recipe():
-        return ["(None)", 1.0, "", ""] * MAX_ROWS
+        return ["(None)", 1.0, "", ""] * opts.promptbook_merge_max_rows
 
     @staticmethod
     def make_recipe(allvars):
@@ -264,7 +263,7 @@ def ui_prompt_merge():
 
     with gr.Row():
         with gr.Column():
-            for i in range(0, MAX_ROWS):
+            for i in range(0, opts.promptbook_merge_max_rows):
                 with gr.Row():
                     with gr.Column():
                         with gr.Row(variant="panel") as row:
@@ -286,7 +285,7 @@ def ui_prompt_merge():
                 dropdown_prompt.change(fn=update_row, inputs=[dropdown_prompt], outputs=[image_preview, custom_row])
                 delete_button.click(fn=lambda: ("(None)", 1.0), inputs=None, outputs=[dropdown_prompt, slider_strength])
     with gr.Row():
-        create_recipe_button = gr.Button("Create Recipe", variant="primary")
+        create_recipe_button = gr.Button("Generate Recipe", variant="primary")
         load_recipe_button = gr.Button("Load Recipe")
         clear_recipe_button = gr.Button("Clear Recipe")
     with gr.Row():
@@ -486,7 +485,7 @@ def open_promptbook():
     add_prompt_button.click(fn=add_prompt, inputs=[prompt_name, add_prompt_index] + add_prompt_vars, outputs=[add_prompt_index] + add_prompt_vars)
 
     def update_select_buttons(selected_index):
-        return [gr.Button.update(variant="primary" if selected_index == i else "secondary") for i in range(0, MAX_ROWS)]
+        return [gr.Button.update(variant="primary" if selected_index == i else "secondary") for i in range(0, opts.promptbook_merge_max_rows)]
     add_prompt_index.change(fn=update_select_buttons, inputs=[add_prompt_index], outputs=prompt_merge_ui.select_button_outputs())
 
     for row in prompt_merge_ui.rows:
@@ -811,7 +810,7 @@ class Script(scripts.Script):
         with gr.Tabs():
             with gr.TabItem('Generate') as tab_generate:
                 recipe_json = gr.Textbox(label="Recipe JSON")
-                dropdown_txt2img_prompt = gr.Dropdown(choices=["Ignore", "Prepend", "Append"], value="Append", label="txt2img prompt")
+                dropdown_txt2img_prompt = gr.Dropdown(choices=["Ignore", "Prepend", "Append"], value="Ignore", label="txt2img prompt")
                 checkbox_save_grid = gr.Checkbox(label="Save grid", value=True)
 
             with gr.TabItem('Save Prompt') as tab_save:
@@ -909,6 +908,8 @@ class Script(scripts.Script):
                                                          len(processed.all_seeds),
                                                          i)
                 for part in recipe.parts:
+                    if part is None:
+                        continue
                     append_generated(part.prompt, part.strength, filename)
 
             if save_grid:
@@ -1001,10 +1002,10 @@ class Script(scripts.Script):
                 processed.images[0],
                 opts.promptbook_prompts_path,
                 basename="",
-                prompt=pos,
+                prompt=p2.prompt,
                 seed=processed.seed,
                 grid=True,
-                p=p,
+                p=p2,
                 forced_filename=filename,
                 # don't save the info .txt alongside like if info=<...> were passed
                 # these images are mostly for comparison instead of generating something pretty
@@ -1042,6 +1043,7 @@ def on_ui_tabs():
 
 DEFAULT_PROMPT = """masterpiece, high quality, highres, 1girl"""
 DEFAULT_NEGATIVE_PROMPT = ""
+DEFAULT_MAX_ROWS = 15
 
 
 def on_ui_settings():
@@ -1053,6 +1055,7 @@ def on_ui_settings():
     shared.opts.add_option("promptbook_default_negative_prompt", shared.OptionInfo(DEFAULT_NEGATIVE_PROMPT, "Default negative prompt to use when generating prompt covers", section=section))
     shared.opts.add_option("promptbook_prompts_path", shared.OptionInfo(PROMPTS_PATH, "Path containing prompt .png files", section=section))
     shared.opts.add_option("promptbook_generated_path", shared.OptionInfo(GENERATED_PATH, "Path containing files for generation stats", section=section))
+    shared.opts.add_option("promptbook_merge_max_rows", shared.OptionInfo(DEFAULT_MAX_ROWS, "Maximum rows for the prompt merger.", section=section))
 
 
 script_callbacks.on_ui_settings(on_ui_settings)
