@@ -1,4 +1,4 @@
-var promptbook_click_image = function(){
+var promptbook_click_image = function(event) {
     if (!this.classList.contains("transform")){        
         var gallery = promptbook_get_parent_by_class(this, "promptbook_cantainor");
         var buttons = gallery.querySelectorAll(".gallery-item");
@@ -114,6 +114,8 @@ function promptbook_delete(del_num, tabname, image_index){
 
 }
 
+
+
 function promptbook_turnpage(tabname){
     var buttons = gradioApp().getElementById(tabname + '_promptbook').querySelectorAll(".gallery-item");
     buttons.forEach(function(elem) {
@@ -130,7 +132,6 @@ function promptbook_init(){
             var tab = promptbook_tab_list[i];
             gradioApp().getElementById(tab + '_promptbook').classList.add("promptbook_cantainor");
             gradioApp().getElementById(tab + '_promptbook_set_index').classList.add("promptbook_set_index");
-            gradioApp().getElementById(tab + '_promptbook_del_button').classList.add("promptbook_del_button");
             gradioApp().getElementById(tab + '_promptbook_gallery').classList.add("promptbook_gallery");
             }
 
