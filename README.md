@@ -16,7 +16,7 @@ You can also batch generate prompt cards using the `Batch file` field. It should
 
 Generate a few more cards with some useful keywords. Alternatively you can find the prompt card `.png`s online and put them into your `promptbook/prompts` folder. Here is an example that encodes `masterpiece, best quality, highres` in the positive prompt and some common negative prompt keywords, you can download and use it yourself:
 
-![masterpiece + unwanted + bad anatomy](static/masterpiece + unwanted + bad anatomy.png)
+![masterpiece + unwanted + bad anatomy](https://github.com/space-nuko/sd-promptbook/raw/master/static/masterpiece%20%2B%20unwanted%20%2B%20bad%20anatomy.png)
 
 As you can see the card will have a before/after comparison so you can better understand how the keywords within will affect the output. When generating the card you can also set a custom strength for the prompt in case the effect isn't obvious enough. Optionally you can disable the comparison image, for example if you're generating hundreds of prompts in a batch session with just one seed.
 
