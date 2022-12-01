@@ -92,12 +92,11 @@ class RecipePart:
 
 
 class Prompt:
-    def __init__(self, name, description, positive, negative, original_prompt="", sha256=None):
+    def __init__(self, name, description, positive, negative, sha256=None):
         self.name = name
         self.description = description
         self.positive = sanitize_prompt(positive)
         self.negative = sanitize_prompt(negative)
-        self.original_prompt = original_prompt
 
         if name == "(Custom)":
             self.sha256 = ""
@@ -128,7 +127,6 @@ class Prompt:
 
         if not slim:
             data["version"] = PROMPTBOOK_VERSION
-            data["original_prompt"] = self.original_prompt
 
         return data
 
@@ -138,9 +136,8 @@ class Prompt:
         positive = data["positive"]
         negative = data["negative"]
         sha256 = data.get("sha256", None)
-        original_prompt = data.get("original_prompt", None)
 
-        return Prompt(name, description, positive, negative, original_prompt, sha256)
+        return Prompt(name, description, positive, negative, sha256)
 
     def to_json(self):
         return json.dumps(self.serialize())
@@ -170,6 +167,9 @@ class UiPromptMerge:
 
     def add_prompt_outputs(self):
         return list(sum([(row.dropdown_prompt, row.slider_strength) for row in self.rows], ()))
+
+    def select_button_outputs(self):
+        return [row.select_button for row in self.rows]
 
     def output_prompt_outputs(self):
         return list(sum([(row.dropdown_prompt, row.slider_strength, row.custom_prompt, row.custom_negative_prompt) for row in self.rows], ()))
@@ -273,7 +273,7 @@ def ui_prompt_merge():
                             with gr.Column(scale=1):
                                 with gr.Row():
                                     delete_button = gr.Button("❌", elem_id=f"promptbook_prompt_delete_button_{i}")
-                                    select_button = gr.Button(f"{i}", elem_id=f"promptbook_prompt_select_button_{i}")
+                                    select_button = gr.Button(f"{i}", elem_id=f"promptbook_prompt_select_button_{i}", variant="primary" if i == 0 else "secondary")
                             with gr.Column(scale=19):
                                 with gr.Row():
                                     image_preview = gr.Image(elem_id=f"promptbook_prompt_preview_{i}", type="pil", show_label=False, interactive=False).style(width=64, height=64)
@@ -347,7 +347,7 @@ def get_prompt_page(page_index, filenames, keyword, sort_by):
     load_info = "<div style='color:#999' align='center'>"
     load_info += f"{length} images in this directory, divided into {int((length + 1) // num_of_prompts_per_page  + 1)} pages"
     load_info += "</div>"
-    return filenames, page_index, prompt_list, visible_num
+    return filenames, page_index, prompt_list, visible_num, ""
 
 
 def create_promptbook(pb):
@@ -441,7 +441,7 @@ def open_promptbook():
     turn_page_switch.change(
         fn=get_prompt_page,
         inputs=[page_index, filenames, keyword, sort_by],
-        outputs=[filenames, page_index, prompt_gallery, visible_img_num]
+        outputs=[filenames, page_index, prompt_gallery, visible_img_num, prompt_file_info_raw]
     )
     turn_page_switch.change(fn=None, inputs=[tabname_box], outputs=None, _js="promptbook_turnpage")
 
@@ -493,6 +493,10 @@ def open_promptbook():
 
     add_prompt_vars = prompt_merge_ui.add_prompt_outputs()
     add_prompt_button.click(fn=add_prompt, inputs=[prompt_name, add_prompt_index] + add_prompt_vars, outputs=[add_prompt_index] + add_prompt_vars)
+
+    def update_select_buttons(selected_index):
+        return [gr.Button.update(variant="primary" if selected_index == i else "secondary") for i in range(0, MAX_ROWS)]
+    add_prompt_index.change(fn=update_select_buttons, inputs=[add_prompt_index], outputs=prompt_merge_ui.select_button_outputs())
 
     for row in prompt_merge_ui.rows:
         row.select_button.click(fn=lambda i=row.index: i, inputs=None, outputs=[add_prompt_index])
@@ -561,7 +565,7 @@ TAB_INDEX_GENERATE = 0
 TAB_INDEX_SAVE_PROMPT = 1
 
 
-def merge_processed(processed_list, include_lone_images=True, rows=None) -> Processed:
+def merge_processed(processed_list, include_lone_images=True, rows=None, make_grid=True) -> Processed:
     # Temporary list of all the images that are generated to be populated into the grid.
     # Will be filled with empty images for any individual step that fails to process properly
     image_cache = []
@@ -578,7 +582,9 @@ def merge_processed(processed_list, include_lone_images=True, rows=None) -> Proc
                 processed_result = copy(processed)
                 cell_mode = processed_image.mode
                 cell_size = processed_image.size
-                processed_result.images = [Image.new(cell_mode, cell_size)]
+                processed_result.images = []
+                if make_grid:
+                    processed_result.images.append(Image.new(cell_mode, cell_size))
 
             image_cache.append(processed_image)
             if include_lone_images:
@@ -592,13 +598,14 @@ def merge_processed(processed_list, include_lone_images=True, rows=None) -> Proc
     if not processed_result:
         raise RuntimeError("Unexpected error: draw_xy_grid failed to return even a single processed image")
 
-    if rows is None:
-        rows = math.ceil(math.sqrt(len(image_cache)))
+    if make_grid:
+        if rows is None:
+            rows = math.ceil(math.sqrt(len(image_cache)))
 
-    # TODO: layout vertically depending on image size
-    grid = images.image_grid(image_cache, rows=rows)
+        # TODO: layout vertically depending on image size
+        grid = images.image_grid(image_cache, rows=rows)
 
-    processed_result.images[0] = grid
+        processed_result.images[0] = grid
 
     return processed_result
 
@@ -668,7 +675,7 @@ class Script(scripts.Script):
         with gr.Tabs():
             with gr.TabItem('Generate') as tab_generate:
                 recipe_json = gr.Textbox(label="Recipe JSON")
-                dropdown_txt2img_prompt = gr.Dropdown(choices=["Prepend", "Append"], value="Append", label="txt2img prompt")
+                dropdown_txt2img_prompt = gr.Dropdown(choices=["Ignore", "Prepend", "Append"], value="Append", label="txt2img prompt")
                 checkbox_save_grid = gr.Checkbox(label="Save grid", value=True)
 
             with gr.TabItem('Save Prompt') as tab_save:
@@ -678,6 +685,8 @@ class Script(scripts.Script):
                 example_prompt = gr.Textbox(label="Example prompt", value="", lines=2)
                 example_negative_prompt = gr.Textbox(label="Example negative prompt", value="", lines=2)
                 append_example_prompts = gr.Checkbox(label="Append example prompts", value=False)
+                batch_filename = gr.Textbox(label="Batch file (one positive prompt per line)", value="")
+                batch_reset_seed = gr.Checkbox(label="Randomize seed each batch iteration", value=False)
 
         with gr.Row(visible=False):
             tab_index = gr.Number(value=0)
@@ -701,16 +710,41 @@ class Script(scripts.Script):
             overwrite_existing,
             example_prompt,
             example_negative_prompt,
-            append_example_prompts
+            append_example_prompts,
+            batch_filename,
+            batch_reset_seed
         ]
 
-    def run(self, p, tab_index, gen_recipe_json, gen_txt2img_prompt, gen_save_grid, save_prompt_name, save_prompt_description, save_overwrite_existing, save_example_prompt, save_example_negative_prompt, save_append_example_prompts):
+    def run(self,
+            p,
+            tab_index,
+            gen_recipe_json,
+            gen_txt2img_prompt,
+            gen_save_grid,
+            save_prompt_name,
+            save_prompt_description,
+            save_overwrite_existing,
+            save_example_prompt,
+            save_example_negative_prompt,
+            save_append_example_prompts,
+            save_batch_filename,
+            save_batch_reset_seed):
         modules.processing.fix_seed(p)
 
         if tab_index == TAB_INDEX_GENERATE:
             return self.generate(p, gen_recipe_json, gen_txt2img_prompt, gen_save_grid)
         elif tab_index == TAB_INDEX_SAVE_PROMPT:
-            return self.save_prompt(p, save_prompt_name, save_prompt_description, save_overwrite_existing, save_example_prompt, save_example_negative_prompt, save_append_example_prompts)
+            return self.save_prompt(
+                p,
+                save_prompt_name,
+                save_prompt_description,
+                save_overwrite_existing,
+                save_example_prompt,
+                save_example_negative_prompt,
+                save_append_example_prompts,
+                save_batch_filename,
+                save_batch_reset_seed
+            )
 
     def generate(self, p, recipe_json, txt2img_prompt, save_grid):
         if recipe_json.strip().startswith("["):
@@ -734,12 +768,21 @@ class Script(scripts.Script):
 
         return merged
 
-    def save_prompt(self, p, prompt_name, prompt_description, overwrite_existing, example_prompt, example_negative_prompt, append_example_prompts):
+    def save_prompt(self,
+                    p,
+                    prompt_name,
+                    prompt_description,
+                    overwrite_existing,
+                    example_prompt,
+                    example_negative_prompt,
+                    append_example_prompts,
+                    batch_filename,
+                    batch_reset_seed):
         sanitized_name = images.sanitize_filename_part(prompt_name, replace_spaces=False)
         if not sanitized_name.strip():
             raise RuntimeError("Prompt name was blank.")
 
-        if not overwrite_existing:
+        if batch_filename != "" and not overwrite_existing:
             outpath = os.path.join(opts.promptbook_prompts_path, f"{sanitized_name}.png")
             if os.path.exists(outpath):
                 raise RuntimeError(f"Prompt file already exists at {outpath}.")
@@ -747,41 +790,79 @@ class Script(scripts.Script):
         p.batch_count = 1
         p.batch_size = 1
 
-        shared.total_tqdm.updateTotal(p.steps * p.n_iter * 2)
-        shared.state.job_count = p.n_iter * 2
-
-        shared.state.job = "Prompt before (1 of 2)"
-        p1 = copy(p)
-        p1.prompt = example_prompt
-        p1.negative_prompt = example_negative_prompt
-        before: Processed = process_images(p1)
-
-        shared.state.job = "Prompt after (2 of 2)"
-        p2 = copy(p)
-        if append_example_prompts:
-            p2.prompt = join_prompts([p.prompt, example_prompt])
-            p2.negative_prompt = join_prompts([p.negative_prompt, example_negative_prompt])
+        if batch_filename != "":
+            with open(batch_filename, "r", encoding="utf-8") as file:
+                prompts = [(line.strip(), "") for line in file]
         else:
-            p2.prompt = join_prompts([example_prompt, p.prompt])
-            p2.negative_prompt = join_prompts([example_negative_prompt, p.negative_prompt])
-        after: Processed = process_images(p2)
+            prompts = [(p.prompt, p.negative_prompt)]
 
-        processed = merge_processed([before, after], include_lone_images=True, rows=1)
+        shared.total_tqdm.updateTotal(p.steps * p.n_iter * 2 * len(prompts))
+        shared.state.job_count = p.n_iter * 2 * len(prompts)
 
-        original_prompt = after.infotexts[0]
-        prompt = Prompt(prompt_name, prompt_description, p.prompt, p.negative_prompt, original_prompt)
-        outpath = images.save_image(
-            processed.images[0],
-            opts.promptbook_prompts_path,
-            basename="",
-            prompt=p.prompt,
-            seed=processed.seed,
-            grid=True,
-            p=p,
-            forced_filename=sanitized_name,
-            existing_info={"promptbook_prompt": prompt.to_json()})
+        results = []
 
-        return processed
+        for i, prompt in enumerate(prompts):
+            if batch_reset_seed:
+                p.seed = -1
+                p.subseed = -1
+                modules.processing.fix_seed(p)
+
+            pos, neg = prompt
+
+            filename = sanitized_name
+            if batch_filename != "":
+                filename += "_" + str(i) + "_" + images.sanitize_filename_part(pos, replace_spaces=False)
+                outpath = os.path.join(opts.promptbook_prompts_path, f"{filename}.png")
+                if os.path.exists(outpath) and not overwrite_existing:
+                    print("File already exists, skipping: " + filename)
+                    continue
+
+            print(f"Generating prompt card '{prompt_name}'")
+            print(f"Positive:{pos}")
+            if neg != "":
+                print(f"Negative:{neg}")
+
+            shared.state.job = f"Prompt before ({i*2} of {shared.state.job_count})"
+            p1 = copy(p)
+            p1.prompt = example_prompt
+            p1.negative_prompt = example_negative_prompt
+            before: Processed = process_images(p1)
+
+            shared.state.job = f"Prompt after ({i*2+1} of {shared.state.job_count})"
+            p2 = copy(p)
+            if append_example_prompts:
+                p2.prompt = join_prompts([pos, example_prompt])
+                p2.negative_prompt = join_prompts([neg, example_negative_prompt])
+            else:
+                p2.prompt = join_prompts([example_prompt, pos])
+                p2.negative_prompt = join_prompts([example_negative_prompt, neg])
+            after: Processed = process_images(p2)
+
+            processed = merge_processed([before, after], include_lone_images=True, rows=1)
+
+            original_prompt = after.infotexts[0]
+            prompt = Prompt(prompt_name, prompt_description, pos, neg)
+            outpath = images.save_image(
+                processed.images[0],
+                opts.promptbook_prompts_path,
+                basename="",
+                prompt=pos,
+                seed=processed.seed,
+                grid=True,
+                p=p,
+                forced_filename=filename,
+                # don't save the info .txt alongside like if info=<...> were passed
+                # these images are mostly for comparison instead of generating something pretty
+                existing_info={"promptbook_prompt": prompt.to_json(), "parameters": original_prompt},
+                pnginfo_section_name=""
+            )
+
+            results.append(processed)
+
+        if not results:
+            raise Exception("No promptcards generated! Do all the files in the batch exist already?")
+
+        return merge_processed(results, include_lone_images=True, make_grid=False)
 
 
 script_callbacks.on_ui_settings(on_ui_settings)
