@@ -481,6 +481,7 @@ def open_promptbook():
         for index, pair in enumerate(pairwise):
             prompt_name, strength = pair
             if index == add_index:
+                print("Add " + add_prompt_name)
                 prompt_name = add_prompt_name
                 strength = 1.0
             result += [prompt_name, strength]
@@ -500,6 +501,7 @@ def open_promptbook():
 
     for row in prompt_merge_ui.rows:
         row.select_button.click(fn=lambda i=row.index: i, inputs=None, outputs=[add_prompt_index])
+        row.delete_button.click(fn=lambda i=row.index: i, inputs=None, outputs=[add_prompt_index])
 
 # TODO Major: Opening a new tab based on a prompt may not be supported by Gradio?
 def open_prompt_tab(seedname: str):
@@ -841,7 +843,7 @@ class Script(scripts.Script):
             processed = merge_processed([before, after], include_lone_images=True, rows=1)
 
             original_prompt = after.infotexts[0]
-            prompt = Prompt(prompt_name, prompt_description, pos, neg)
+            prompt = Prompt(filename, prompt_description, pos, neg)
             outpath = images.save_image(
                 processed.images[0],
                 opts.promptbook_prompts_path,
