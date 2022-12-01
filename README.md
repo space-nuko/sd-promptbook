@@ -14,7 +14,7 @@ First order of business is to generate some prompt cards, these are `.png` files
 
 In the `Scripts` dropdown for txt2img, select `Promptbook Generation` and then the `Save Prompt` tab. Now enter the prompt you want to save into the positive/negative fields of the txt2img UI and press `Generate` like usual. This will save a new prompt card to the output directory (default is `extensions/sd-promptbook/promptbook/prompts`)
 
-The `Example prompt` fields are only used for generating the prompt card's image and aren't otherwise saved. Typically I use `masterpiece, highest quality, highres, 1girl` in the positive prompt so there's at least a clearly defined female subject in the resulting images. `Append example prompts` means to place your snippet prompt before the example prompts.
+The `Example prompt` fields are only used for generating the prompt card's image and aren't otherwise saved. Typically I use `masterpiece, highest quality, highres, 1girl` in the positive example prompt so there's at least a clearly defined female subject in the resulting images. `Append example prompts` means to place your snippet prompt before the example prompts.
 
 Note that if you have a negative prompt you normally use for txt2img, it will get added to the snippet unless you delete it from the txt2img field first. Usually you want to keep the negative prompt blank when generating prompt cards, except for a single card that captures the negative prompt keywords you normally use. You would then add that negative prompt card to all your recipes later on.
 
