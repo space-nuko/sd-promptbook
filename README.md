@@ -51,3 +51,7 @@ The usual txt2img prompt can also be appended or prepended to the result output 
 ![generated](https://github.com/space-nuko/sd-promptbook/raw/master/static/generated.png)
 
 You can view the sample images resulting from adding a prompt to a recipe via the `generated` tab in the `Promptbook` section, so long as they aren't moved from their original location. First refresh the list of prompts by clicking the blue refresh button, then select the prompt you want to view images for. As you combine a lot of prompts this becomes more and more useful for gathering examples of outputs across all prompts, filtered down to a single subject or concept.
+
+## Note
+
+This extension is a work-in-progress, plenty of improvements can still be made!
