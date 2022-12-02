@@ -263,7 +263,7 @@ def ui_prompt_merge():
 
     with gr.Row():
         with gr.Column():
-            for i in range(0, opts.promptbook_merge_max_rows):
+            for i in range(0, int(opts.promptbook_merge_max_rows)):
                 with gr.Row():
                     with gr.Column():
                         with gr.Row(variant="panel") as row:
@@ -485,7 +485,7 @@ def open_promptbook():
     add_prompt_button.click(fn=add_prompt, inputs=[prompt_name, add_prompt_index] + add_prompt_vars, outputs=[add_prompt_index] + add_prompt_vars)
 
     def update_select_buttons(selected_index):
-        return [gr.Button.update(variant="primary" if selected_index == i else "secondary") for i in range(0, opts.promptbook_merge_max_rows)]
+        return [gr.Button.update(variant="primary" if selected_index == i else "secondary") for i in range(0, int(opts.promptbook_merge_max_rows))]
     add_prompt_index.change(fn=update_select_buttons, inputs=[add_prompt_index], outputs=prompt_merge_ui.select_button_outputs())
 
     for row in prompt_merge_ui.rows:
@@ -814,9 +814,12 @@ class Script(scripts.Script):
                 checkbox_save_grid = gr.Checkbox(label="Save grid", value=True)
 
             with gr.TabItem('Save Prompt') as tab_save:
-                prompt_name = gr.Textbox(label="Prompt name (Leave blank to positive prompt as name)", value="")
+                prompt_name = gr.Textbox(label="Prompt name (Leave blank to use positive prompt as name)", value="")
                 prompt_description = gr.Textbox(label="Prompt description", value="")
-                overwrite_existing = gr.Checkbox(label="Overwrite existing", value=False)
+                save_prompt_card = gr.Checkbox(label="Save prompt card", value=True)
+                with gr.Row():
+                    overwrite_existing = gr.Checkbox(label="Overwrite existing", value=False)
+                    generate_comparison = gr.Checkbox(label="Generate comparison", value=False)
                 example_prompt = gr.Textbox(label="Example prompt", value="", lines=2)
                 example_negative_prompt = gr.Textbox(label="Example negative prompt", value="", lines=2)
                 append_example_prompts = gr.Checkbox(label="Append example prompts", value=False)
@@ -843,6 +846,8 @@ class Script(scripts.Script):
             prompt_name,
             prompt_description,
             overwrite_existing,
+            generate_comparison,
+            save_prompt_card,
             example_prompt,
             example_negative_prompt,
             append_example_prompts,
@@ -859,6 +864,8 @@ class Script(scripts.Script):
             save_prompt_name,
             save_prompt_description,
             save_overwrite_existing,
+            save_generate_comparison,
+            save_prompt_card,
             save_example_prompt,
             save_example_negative_prompt,
             save_append_example_prompts,
@@ -876,6 +883,8 @@ class Script(scripts.Script):
                 save_prompt_name,
                 save_prompt_description,
                 save_overwrite_existing,
+                save_generate_comparison,
+                save_prompt_card,
                 save_example_prompt,
                 save_example_negative_prompt,
                 save_append_example_prompts,
@@ -922,11 +931,44 @@ class Script(scripts.Script):
 
         return merged
 
+    def generate_cover_with_comparison(self, p, i, filename, prompt_description, pos, neg, example_prompt, example_negative_prompt, append_example_prompts):
+        p1 = copy(p)
+        p1.prompt = example_prompt
+        p1.negative_prompt = example_negative_prompt
+        before: Processed = process_images(p1)
+
+        p2 = copy(p)
+        if append_example_prompts:
+            p2.prompt = join_prompts([pos, example_prompt])
+            p2.negative_prompt = join_prompts([neg, example_negative_prompt])
+        else:
+            p2.prompt = join_prompts([example_prompt, pos])
+            p2.negative_prompt = join_prompts([example_negative_prompt, neg])
+        after: Processed = process_images(p2)
+
+        original_prompt = after.infotexts[0]
+
+        return merge_processed([before, after], include_lone_images=True, rows=1), original_prompt, p2
+
+    def generate_cover(self, p, i, filename, prompt_description, pos, neg, example_prompt, example_negative_prompt, append_example_prompts):
+        p1 = copy(p)
+        if append_example_prompts:
+            p1.prompt = join_prompts([pos, example_prompt])
+            p1.negative_prompt = join_prompts([neg, example_negative_prompt])
+        else:
+            p1.prompt = join_prompts([example_prompt, pos])
+            p1.negative_prompt = join_prompts([example_negative_prompt, neg])
+        after: Processed = process_images(p1)
+
+        return after, after.infotexts[0], p1
+
     def save_prompt(self,
                     p,
                     prompt_name,
                     prompt_description,
                     overwrite_existing,
+                    generate_comparison,
+                    save_prompt_card,
                     example_prompt,
                     example_negative_prompt,
                     append_example_prompts,
@@ -938,11 +980,6 @@ class Script(scripts.Script):
         if not sanitized_name.strip():
             raise RuntimeError("Prompt name was blank.")
 
-        if batch_filename != "" and not overwrite_existing:
-            outpath = os.path.join(opts.promptbook_prompts_path, f"{sanitized_name}.png")
-            if os.path.exists(outpath):
-                raise RuntimeError(f"Prompt file already exists at {outpath}.")
-
         p.batch_count = 1
         p.batch_size = 1
 
@@ -952,8 +989,10 @@ class Script(scripts.Script):
         else:
             prompts = [(p.prompt, p.negative_prompt)]
 
-        shared.total_tqdm.updateTotal(p.steps * p.n_iter * 2 * len(prompts))
-        shared.state.job_count = p.n_iter * 2 * len(prompts)
+        steps_per_run = 2 if generate_comparison else 1
+
+        shared.total_tqdm.updateTotal(p.steps * p.n_iter * steps_per_run * len(prompts))
+        shared.state.job_count = p.n_iter * steps_per_run * len(prompts)
 
         results = []
 
@@ -968,54 +1007,38 @@ class Script(scripts.Script):
             filename = sanitized_name
             if batch_filename != "":
                 filename += "_" + str(i) + "_" + images.sanitize_filename_part(pos, replace_spaces=False)
-                outpath = os.path.join(opts.promptbook_prompts_path, f"{filename}.png")
-                if os.path.exists(outpath) and not overwrite_existing:
-                    print("File already exists, skipping: " + filename)
-                    continue
+
+            outpath = os.path.join(opts.promptbook_prompts_path, f"{filename}.png")
+            if os.path.exists(outpath) and not overwrite_existing:
+                print("File already exists, skipping: " + filename)
+                continue
 
             print(f"Generating prompt card '{prompt_name}'")
             print(f"Positive:{pos}")
             if neg != "":
                 print(f"Negative:{neg}")
 
-            shared.state.job = f"Prompt before ({i*2} of {shared.state.job_count})"
-            p1 = copy(p)
-            p1.prompt = example_prompt
-            p1.negative_prompt = example_negative_prompt
-            before: Processed = process_images(p1)
-
-            shared.state.job = f"Prompt after ({i*2+1} of {shared.state.job_count})"
-            p2 = copy(p)
-            if append_example_prompts:
-                p2.prompt = join_prompts([pos, example_prompt])
-                p2.negative_prompt = join_prompts([neg, example_negative_prompt])
+            if generate_comparison:
+                processed, original_prompt, p2 = self.generate_cover_with_comparison(p, i, filename, prompt_description, pos, neg, example_prompt, example_negative_prompt, append_example_prompts)
             else:
-                p2.prompt = join_prompts([example_prompt, pos])
-                p2.negative_prompt = join_prompts([example_negative_prompt, neg])
-            after: Processed = process_images(p2)
+                processed, original_prompt, p2 = self.generate_cover(p, i, filename, prompt_description, pos, neg, example_prompt, example_negative_prompt, append_example_prompts)
 
-            processed = merge_processed([before, after], include_lone_images=True, rows=1)
-
-            original_prompt = after.infotexts[0]
-            prompt = Prompt(filename, prompt_description, pos, neg)
-            grid_outpath = images.save_image(
-                processed.images[0],
-                opts.promptbook_prompts_path,
-                basename="",
-                prompt=p2.prompt,
-                seed=processed.seed,
-                grid=True,
-                p=p2,
-                forced_filename=filename,
-                # don't save the info .txt alongside like if info=<...> were passed
-                # these images are mostly for comparison instead of generating something pretty
-                existing_info={"promptbook_prompt": prompt.to_json(), "parameters": original_prompt},
-                pnginfo_section_name=""
-            )
-
-            # sample_filename = get_resulting_sample_filename(p2, after, p2.all_seeds[0], processed.all_prompts[0], processed.images[0], 2, 1)
-            # append_generated(prompt, 1.0, sample_filename)
-            # append_generated(prompt, 1.0, grid_outpath)
+            if save_prompt_card:
+                prompt = Prompt(filename, prompt_description, pos, neg)
+                grid_outpath = images.save_image(
+                    processed.images[0],
+                    opts.promptbook_prompts_path,
+                    basename="",
+                    prompt=p2.prompt,
+                    seed=processed.seed,
+                    grid=True,
+                    p=p2,
+                    forced_filename=filename,
+                    # don't save the info .txt alongside like if info=<...> were passed
+                    # these images are mostly for comparison instead of generating something pretty
+                    existing_info={"promptbook_prompt": prompt.to_json(), "parameters": original_prompt},
+                    pnginfo_section_name=""
+                )
 
             results.append(processed)
 
@@ -1055,7 +1078,7 @@ def on_ui_settings():
     shared.opts.add_option("promptbook_default_negative_prompt", shared.OptionInfo(DEFAULT_NEGATIVE_PROMPT, "Default negative prompt to use when generating prompt covers", section=section))
     shared.opts.add_option("promptbook_prompts_path", shared.OptionInfo(PROMPTS_PATH, "Path containing prompt .png files", section=section))
     shared.opts.add_option("promptbook_generated_path", shared.OptionInfo(GENERATED_PATH, "Path containing files for generation stats", section=section))
-    shared.opts.add_option("promptbook_merge_max_rows", shared.OptionInfo(DEFAULT_MAX_ROWS, "Maximum rows for the prompt merger.", section=section))
+    shared.opts.add_option("promptbook_merge_max_rows", shared.OptionInfo(DEFAULT_MAX_ROWS, "Maximum prompt count for the prompt merger", section=section))
 
 
 script_callbacks.on_ui_settings(on_ui_settings)
