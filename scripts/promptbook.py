@@ -69,6 +69,39 @@ class Recipe:
         assert isinstance(data, list)
         return [Recipe.deserialize(entry) for entry in data]
 
+    def evaluate(self, p=None, existing_prompt_action=None):
+        prompt_parts = []
+        negative_prompt_parts = []
+
+        for part in self.parts:
+            if part is None:
+                continue
+
+            prompt = part.prompt
+
+            positive = apply_prompt_strength(prompt.positive, part.strength)
+            negative = apply_prompt_strength(prompt.negative, part.strength)
+
+            if positive.strip():
+                prompt_parts.append(positive)
+            if negative.strip():
+                negative_prompt_parts.append(negative)
+
+        if p:
+            if p.prompt.strip():
+                if existing_prompt_action == "Append":
+                    prompt_parts.append(p.prompt)
+                elif existing_prompt_action == "Prepend":
+                    prompt_parts = [p.prompt] + prompt_parts
+
+            if p.negative_prompt.strip():
+                if existing_prompt_action == "Append":
+                    negative_prompt_parts.append(p.negative_prompt)
+                elif existing_prompt_action == "Prepend":
+                    negative_prompt_parts = [p.negative_prompt] + negative_prompt_parts
+
+        return join_prompts(prompt_parts), join_prompts(negative_prompt_parts)
+
 
 class RecipePart:
     def __init__(self, prompt, strength):
@@ -96,11 +129,12 @@ class RecipePart:
 
 
 class Prompt:
-    def __init__(self, name, description, positive, negative, sha256=None):
+    def __init__(self, name, description, positive, negative, tags=[], sha256=None):
         self.name = name
         self.description = description
         self.positive = sanitize_prompt(positive)
         self.negative = sanitize_prompt(negative)
+        self.tags = tags
 
         if name == "(Custom)":
             self.sha256 = ""
@@ -131,6 +165,7 @@ class Prompt:
 
         if not slim:
             data["version"] = PROMPTBOOK_VERSION
+            data["tags"] = self.tags
 
         return data
 
@@ -139,9 +174,10 @@ class Prompt:
         description = data["description"]
         positive = data["positive"]
         negative = data["negative"]
+        tags = data.get("tags", [])
         sha256 = data.get("sha256", None)
 
-        return Prompt(name, description, positive, negative, sha256)
+        return Prompt(name, description, positive, negative, tags, sha256)
 
     def to_json(self):
         return json.dumps(self.serialize())
@@ -180,7 +216,7 @@ class UiPromptMerge:
     @staticmethod
     def load_recipe(recipe_json):
         recipe = Recipe.from_json(recipe_json)
-        results = ["(None)", 1.0, "", ""] * opts.promptbook_merge_max_rows
+        results = ["(None)", 1.0, "", ""] * int(opts.promptbook_merge_max_rows)
 
         for index, part in enumerate(recipe.parts):
             if part is None:
@@ -207,7 +243,13 @@ class UiPromptMerge:
 
     @staticmethod
     def clear_recipe():
-        return ["(None)", 1.0, "", ""] * opts.promptbook_merge_max_rows
+        return ["(None)", 1.0, "", ""] * int(opts.promptbook_merge_max_rows)
+
+    @staticmethod
+    def evaluate_recipe(*rest):
+        recipe = UiPromptMerge.make_recipe(rest)
+        prompt, negative_prompt = recipe.evaluate()
+        return f"{prompt}\nNegative prompt: {negative_prompt}".strip()
 
     @staticmethod
     def make_recipe(allvars):
@@ -288,6 +330,7 @@ def ui_prompt_merge():
         create_recipe_button = gr.Button("Generate Recipe", variant="primary")
         load_recipe_button = gr.Button("Load Recipe")
         clear_recipe_button = gr.Button("Clear Recipe")
+        evaluate_recipe_button = gr.Button("Evaluate Recipe")
     with gr.Row():
         recipe_json = gr.Textbox(label="Recipe Output")
 
@@ -295,6 +338,7 @@ def ui_prompt_merge():
     create_recipe_button.click(fn=UiPromptMerge.output_recipe, inputs=prompt_merge_ui.output_prompt_outputs(), outputs=[recipe_json])
     load_recipe_button.click(fn=UiPromptMerge.load_recipe, inputs=[recipe_json], outputs=prompt_merge_ui.output_prompt_outputs())
     clear_recipe_button.click(fn=UiPromptMerge.clear_recipe, inputs=None, outputs=prompt_merge_ui.output_prompt_outputs())
+    evaluate_recipe_button.click(fn=UiPromptMerge.evaluate_recipe, inputs=prompt_merge_ui.output_prompt_outputs(), outputs=[recipe_json])
 
     return prompt_merge_ui
 
@@ -306,6 +350,7 @@ tabs_list = ["promptbook", "generated"]
 num_of_prompts_per_page = 0
 PROMPTS_PATH = os.path.join(scripts.basedir(), "promptbook/prompts")
 GENERATED_PATH = os.path.join(scripts.basedir(), "promptbook/generated")
+ICON_PATH = os.path.join(scripts.basedir(), "static/promptbook_icon.png")
 
 
 def traverse_all_files(curr_path, prompt_list) -> List[Tuple[str, os.stat_result]]:
@@ -362,7 +407,7 @@ def show_prompt_info(tabname_box, num, page_index, filenames):
 
 def populate_prompt_info(image):
     prompt = Prompt.load_from_image(image)
-    return prompt.name, prompt.description, prompt.positive, prompt.negative, "", ""
+    return prompt.name, prompt.description, prompt.positive, prompt.negative, "", "", ','.join(prompt.tags)
 
 
 def open_promptbook():
@@ -393,6 +438,7 @@ def open_promptbook():
                                 prompt_description = gr.Textbox(value="", label="Prompt Description", interactive=False)
                                 prompt_positive = gr.Textbox(label="Positive Prompt", interactive=False, lines=6)
                                 prompt_negative = gr.Textbox(label="Negative Prompt", interactive=False, lines=6)
+                                prompt_tags = gr.Textbox(value="", label="Prompt Tags", interactive=False)
                                 prompt_file_name = gr.Textbox(value="", label="File Name", interactive=False)
                                 prompt_file_time = gr.HTML()
                             with gr.Row():
@@ -455,7 +501,7 @@ def open_promptbook():
                         prompt_info_switch,
                         prompt_file_info_raw
                     ])
-    prompt_info_switch.change(fn=populate_prompt_info, inputs=[prompt_info_switch], outputs=[prompt_name, prompt_description, prompt_positive, prompt_negative])
+    prompt_info_switch.change(fn=populate_prompt_info, inputs=[prompt_info_switch], outputs=[prompt_name, prompt_description, prompt_positive, prompt_negative, prompt_tags])
     prompt_info_switch.change(fn=modules.extras.run_pnginfo, inputs=[prompt_info_switch], outputs=[info1, prompt_file_info_raw, info2])
 
     try:
@@ -701,37 +747,10 @@ def apply_prompt_strength(prompt, strength):
 
 
 def apply_recipe(p, recipe, existing_prompt_action):
-    prompt_parts = []
-    negative_prompt_parts = []
+    prompt, negative_prompt = recipe.evaluate(p, existing_prompt_action)
 
-    for part in recipe.parts:
-        if part is None:
-            continue
-
-        prompt = part.prompt
-
-        positive = apply_prompt_strength(prompt.positive, part.strength)
-        negative = apply_prompt_strength(prompt.negative, part.strength)
-
-        if positive.strip():
-            prompt_parts.append(positive)
-        if negative.strip():
-            negative_prompt_parts.append(negative)
-
-    if p.prompt.strip():
-        if existing_prompt_action == "Append":
-            prompt_parts.append(p.prompt)
-        elif existing_prompt_action == "Prepend":
-            prompt_parts = [p.prompt] + prompt_parts
-
-    if p.negative_prompt.strip():
-        if existing_prompt_action == "Append":
-            negative_prompt_parts.append(p.negative_prompt)
-        elif existing_prompt_action == "Prepend":
-            negative_prompt_parts = [p.negative_prompt] + negative_prompt_parts
-
-    p.prompt = join_prompts(prompt_parts)
-    p.negative_prompt = join_prompts(negative_prompt_parts)
+    p.prompt = prompt
+    p.negative_prompt = negative_prompt
 
     return process_images(p)
 
@@ -799,6 +818,52 @@ def append_generated(prompt, strength, output_img_filename):
         json.dump(jsdata, file)
 
 
+import base64
+import json
+import zlib
+from PIL import Image, PngImagePlugin, ImageDraw, ImageFont
+from fonts.ttf import Roboto
+
+
+def caption_image_overlay(srcimage, title, textfont=None):
+    from math import sin
+
+    title = (title[:30] + '...') if len(title) > 30 else title
+
+    image = srcimage.copy()
+    fontsize = 32
+    if textfont is None:
+        try:
+            textfont = ImageFont.truetype(None or Roboto, fontsize)
+            textfont = None or Roboto
+        except Exception:
+            textfont = Roboto
+
+    factor = 4.0
+    gradient = Image.new('RGBA', (1, image.size[1]), color=(0, 0, 0, 0))
+    for y in range(math.ceil(image.size[1]/3)):
+        mag = sin(y/image.size[1]*factor)
+        gradient.putpixel((0, y+math.floor(image.size[1]/3*2)), (0, 0, 0, int(mag*255)))
+    image = Image.alpha_composite(image.convert('RGBA'), gradient.resize(image.size))
+
+    draw = ImageDraw.Draw(image)
+
+    font = ImageFont.truetype(textfont, fontsize)
+    padding = 10
+
+    _, _, w, h = draw.textbbox((0, 0), title, font=font)
+    fontsize = min(int(fontsize * (((image.size[0]*0.95)-(padding*4))/w)), 72)
+    font = ImageFont.truetype(textfont, fontsize)
+    _, _, w, h = draw.textbbox((0, 0), title, font=font)
+    draw.text((padding, image.size[1]-(padding*1.5)), title, anchor='ls', font=font, fill=(255, 255, 255, 230))
+
+    icon_size = int(min(image.size[0], image.size[1]) * 0.2)
+    icon = Image.open(ICON_PATH).resize((icon_size, icon_size))
+    image.paste(icon, (padding, padding), icon)
+
+    return image
+
+
 class Script(scripts.Script):
     def title(self):
         return "Promptbook Generation"
@@ -816,6 +881,7 @@ class Script(scripts.Script):
             with gr.TabItem('Save Prompt') as tab_save:
                 prompt_name = gr.Textbox(label="Prompt name (Leave blank to use positive prompt as name)", value="")
                 prompt_description = gr.Textbox(label="Prompt description", value="")
+                prompt_tags = gr.Textbox(label="Prompt tags", value="")
                 save_prompt_card = gr.Checkbox(label="Save prompt card", value=True)
                 with gr.Row():
                     overwrite_existing = gr.Checkbox(label="Overwrite existing", value=False)
@@ -845,6 +911,7 @@ class Script(scripts.Script):
             checkbox_save_grid,
             prompt_name,
             prompt_description,
+            prompt_tags,
             overwrite_existing,
             generate_comparison,
             save_prompt_card,
@@ -863,6 +930,7 @@ class Script(scripts.Script):
             gen_save_grid,
             save_prompt_name,
             save_prompt_description,
+            save_prompt_tags,
             save_overwrite_existing,
             save_generate_comparison,
             save_prompt_card,
@@ -882,6 +950,7 @@ class Script(scripts.Script):
                 p,
                 save_prompt_name,
                 save_prompt_description,
+                save_prompt_tags,
                 save_overwrite_existing,
                 save_generate_comparison,
                 save_prompt_card,
@@ -966,6 +1035,7 @@ class Script(scripts.Script):
                     p,
                     prompt_name,
                     prompt_description,
+                    prompt_tags,
                     overwrite_existing,
                     generate_comparison,
                     save_prompt_card,
@@ -977,17 +1047,23 @@ class Script(scripts.Script):
         if prompt_name == "":
             prompt_name = p.prompt
         sanitized_name = images.sanitize_filename_part(prompt_name, replace_spaces=False)
-        if not sanitized_name.strip():
+        if batch_filename == "" and not sanitized_name.strip():
             raise RuntimeError("Prompt name was blank.")
 
         p.batch_count = 1
-        p.batch_size = 1
+        # p.batch_size = 1
 
         if batch_filename != "":
             with open(batch_filename, "r", encoding="utf-8") as file:
-                prompts = [(line.strip(), "") for line in file]
+                ext = os.path.splitext(batch_filename)
+                if ext == ".json":
+                    prompts_json = json.load(file)
+                    prompts = [(p.get("prompt", ""), p.get("negative_prompt", ""), p.get("tags", [])) for p in prompts_json]
+                else:
+                    prompts = [(line.strip(), "", []) for line in file]
         else:
-            prompts = [(p.prompt, p.negative_prompt)]
+            tags = [tag.strip() for tag in prompt_tags.split(',')]
+            prompts = [(p.prompt, p.negative_prompt, tags)]
 
         steps_per_run = 2 if generate_comparison else 1
 
@@ -1002,21 +1078,23 @@ class Script(scripts.Script):
                 p.subseed = -1
                 modules.processing.fix_seed(p)
 
-            pos, neg = prompt
+            pos, neg, tags = prompt
 
             filename = sanitized_name
             if batch_filename != "":
-                filename += "_" + str(i) + "_" + images.sanitize_filename_part(pos, replace_spaces=False)
+                filename = images.sanitize_filename_part(pos, replace_spaces=False)
 
             outpath = os.path.join(opts.promptbook_prompts_path, f"{filename}.png")
             if os.path.exists(outpath) and not overwrite_existing:
                 print("File already exists, skipping: " + filename)
                 continue
 
-            print(f"Generating prompt card '{prompt_name}'")
+            print(f"Generating prompt card '{filename}'")
             print(f"Positive:{pos}")
             if neg != "":
                 print(f"Negative:{neg}")
+            if tags:
+                print(f"Tags: {', '.join(tags)}")
 
             if generate_comparison:
                 processed, original_prompt, p2 = self.generate_cover_with_comparison(p, i, filename, prompt_description, pos, neg, example_prompt, example_negative_prompt, append_example_prompts)
@@ -1024,9 +1102,10 @@ class Script(scripts.Script):
                 processed, original_prompt, p2 = self.generate_cover(p, i, filename, prompt_description, pos, neg, example_prompt, example_negative_prompt, append_example_prompts)
 
             if save_prompt_card:
-                prompt = Prompt(filename, prompt_description, pos, neg)
+                prompt = Prompt(filename, prompt_description, pos, neg, tags)
+                cover = caption_image_overlay(processed.images[0], filename)
                 grid_outpath = images.save_image(
-                    processed.images[0],
+                    cover,
                     opts.promptbook_prompts_path,
                     basename="",
                     prompt=p2.prompt,
